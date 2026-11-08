@@ -36,6 +36,28 @@ test('USD API: exact cents persist across restart; host login, closure and settl
  }finally{await new Promise(resolve=>app.server.close(resolve));app.db.close();}
  const reopened=createApp({dbPath,password:'test-only-long-password'});assert.equal(reopened.board().jackpotCents,7565);assert.equal(reopened.board().status,'settled');reopened.db.close();rmSync(dir,{recursive:true,force:true});
 });
+test('closing betting needs no actual date and preserves future predictions without awarding payouts',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'scarlett-close-'));const dbPath=join(dir,'test.sqlite');
+ const app=createApp({dbPath,password:'test-only',ready:true});
+ await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
+ const origin='http://127.0.0.1:'+app.server.address().port;
+ const request=(path,data,headers={})=>fetch(origin+path,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...headers},body:JSON.stringify(data)});
+ try{
+  for(const [name,date,amountCents] of [['First guest','2035-11-20',2500],['Second guest','2035-11-22',100]]){
+   assert.equal((await request('/api/v2/predictions',{name,date,amountCents,currency:'USD'})).status,200);
+  }
+  const before=app.board();
+  const login=await request('/api/session',{password:'test-only'});
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  assert.equal((await request('/api/v2/host',{action:'close'},{Cookie:cookie})).status,200);
+  const closed=app.board();
+  assert.equal(closed.status,'closed');assert.equal(closed.actualDate,null);assert.equal(closed.winningDate,null);
+  assert.deepEqual(closed.payoutsCents,{});assert.equal(closed.jackpotCents,2600);assert.deepEqual(closed.bets,before.bets);
+  assert.equal((await request('/api/v2/host',{action:'settle',date:'2035-11-22'},{Cookie:cookie})).status,400);
+  assert.deepEqual(app.board(),closed);
+  assert.equal((await request('/api/v2/predictions',{name:'Late guest',date:'2035-11-21',amountCents:500,currency:'USD'})).status,409);
+ }finally{await new Promise(resolve=>app.server.close(resolve));app.db.close();rmSync(dir,{recursive:true,force:true});}
+});
 test('tied payouts preserve every cent and too-late guesses get refund amounts',()=>{
  const bets=[{id:'a',name:'a',date:'2026-11-04',amount_cents:1000,created_at:1},{id:'b',name:'b',date:'2026-11-04',amount_cents:3000,created_at:2},{id:'c',name:'c',date:'2026-11-07',amount_cents:1001,created_at:3}];
  const result=settleBets(bets,'2026-11-05');
