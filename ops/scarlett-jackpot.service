@@ -1,0 +1,17 @@
+[Unit]
+Description=Scarlett first steps jackpot server
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/nbock/apps/scarlett-first-steps
+ExecStart=/home/nbock/apps/.tooling/node-v22.16.0-linux-x64/bin/node --experimental-strip-types --experimental-sqlite server/server.mjs
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+UMask=0077
+MemoryMax=512M
+TasksMax=64
+
+[Install]
+WantedBy=default.target

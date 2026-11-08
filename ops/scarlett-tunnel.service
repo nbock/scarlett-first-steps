@@ -1,0 +1,18 @@
+[Unit]
+Description=Scarlett temporary public tunnel and GitHub address updater
+After=network-online.target scarlett-jackpot.service
+Requires=scarlett-jackpot.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/nbock/apps/scarlett-first-steps
+ExecStart=/home/nbock/apps/.tooling/node-v22.16.0-linux-x64/bin/node scripts/tunnel.mjs
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+UMask=0077
+MemoryMax=512M
+TasksMax=128
+
+[Install]
+WantedBy=default.target
