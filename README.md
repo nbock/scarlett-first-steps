@@ -1,6 +1,6 @@
 # Scarlett’s First Steps Jackpot
 
-A birthday prediction game with a permanent GitHub Pages frontend and a small Node/SQLite backend hosted on a Ryzen machine. All wagers are play chips. There are no payments or cash prizes.
+A birthday prediction game with a permanent GitHub Pages frontend and a small Node/SQLite backend hosted on a Ryzen machine. Wagers and the jackpot are recorded in US dollars. The host collects payments and pays winners separately; the site does not process or transfer money. The displayed jackpot is the total pledged, not a verified cash balance.
 
 ## Addresses
 
@@ -14,7 +14,7 @@ Bets, sessions, the host password, and service configuration are stored outside 
 
 ## Game rules
 
-Each person supplies a name, predicted date, and wager from 1–1,000 play chips. The latest predicted date on or before the actual date wins. Ties split the pot proportionally to wagers, using largest-remainder whole-chip rounding. If all guesses are too late, all wagers are returned. The host closes betting and records the actual date; a settled result is final.
+Each person supplies a name, predicted date, and wager from $1.00–$1,000.00 USD. The latest predicted date on or before the actual date wins. Ties split the pot proportionally to wagers, using exact integer cents and largest-remainder cent rounding. If all guesses are too late, the host returns all wagers. The host closes betting and records the actual date; a settled result is final.
 
 ## Development and hosting
 
@@ -39,3 +39,5 @@ journalctl --user -u scarlett-jackpot -u scarlett-tunnel -n 50
 ```
 
 Local configuration: `~/.config/scarlett-jackpot/config.json` (mode 600). Host password: `~/.config/scarlett-jackpot/host-password.txt` (mode 600). Database: `~/.local/share/scarlett-jackpot/bets.sqlite`. Back up the database with SQLite-aware backup tooling; do not commit it.
+
+Dollar wagers use the versioned `/api/v2` betting endpoints and explicit USD amounts in cents. Old cached chip forms cannot place cash wagers. The migration archives earlier chip records as `legacy_chip_bets` and `legacy_chip_game`; it never turns them into dollar obligations.
