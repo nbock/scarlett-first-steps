@@ -13,15 +13,15 @@ test('USD API: exact cents persist across restart; host login, closure and settl
  try{
   assert.equal((await request('/host')).status,200);
   assert.equal((await request('/api/predictions',{name:'Old UI',date:'2026-11-04',amount:25})).status,409);
-  for(const invalid of [{amountCents:123.4,currency:'USD'},{amountCents:100001,currency:'USD'},{amountCents:2500,currency:'EUR'},{amount:25}]){
+  for(const invalid of [{amountCents:123.4,currency:'USD',venmo:'test-guest'},{amountCents:100001,currency:'USD',venmo:'test-guest'},{amountCents:2500,currency:'EUR'},{amount:25}]){
    assert.equal((await request('/api/v2/predictions',{name:'Invalid',date:'2026-11-04',...invalid})).status,400);
   }
-  const first=await request('/api/v2/predictions',{name:'Sam',date:'2026-11-04',amountCents:2510,currency:"USD"},{Origin:PAGES});assert.equal(first.status,200);assert.equal(first.headers.get('access-control-allow-origin'),PAGES);
-  assert.equal((await request('/api/v2/predictions',{name:' sam ',date:'2026-11-04',amountCents:2510,currency:"USD"})).status,409);
-  assert.equal((await request('/api/v2/predictions',{name:'Bad',date:'2026-02-30',amountCents:2510,currency:"USD"})).status,400);
-  assert.equal((await request('/api/v2/predictions',{name:'Bad',date:'2026-11-04',amountCents:-1,currency:"USD"})).status,400);
-  assert.equal((await request('/api/v2/predictions',{name:'Bad',date:'2026-11-04',amountCents:1000,currency:"USD"},{Origin:'https://unrelated.example'})).status,403);
-  await request('/api/v2/predictions',{name:'Alex',date:'2026-11-07',amountCents:5055,currency:"USD"});
+  const first=await request('/api/v2/predictions',{name:'Sam',date:'2026-11-04',amountCents:2510,currency:"USD",venmo:"test-guest"},{Origin:PAGES});assert.equal(first.status,200);assert.equal(first.headers.get('access-control-allow-origin'),PAGES);
+  assert.equal((await request('/api/v2/predictions',{name:' sam ',date:'2026-11-04',amountCents:2510,currency:"USD",venmo:"test-guest"})).status,409);
+  assert.equal((await request('/api/v2/predictions',{name:'Bad',date:'2026-02-30',amountCents:2510,currency:"USD",venmo:"test-guest"})).status,400);
+  assert.equal((await request('/api/v2/predictions',{name:'Bad',date:'2026-11-04',amountCents:-1,currency:"USD",venmo:"test-guest"})).status,400);
+  assert.equal((await request('/api/v2/predictions',{name:'Bad',date:'2026-11-04',amountCents:1000,currency:"USD",venmo:"test-guest"},{Origin:'https://unrelated.example'})).status,403);
+  await request('/api/v2/predictions',{name:'Alex',date:'2026-11-07',amountCents:5055,currency:"USD",venmo:"test-guest"});
   assert.equal((await(await request('/api/v2/predictions')).json()).jackpotCents,7565);
   assert.equal((await request('/api/v2/host',{action:'close'},{'oai-authenticated-user-email':'bocknolan@gmail.com','oai-authenticated-user-id':'forged'})).status,403);
   assert.equal((await request('/api/session',{password:'wrong'})).status,401);
@@ -29,7 +29,7 @@ test('USD API: exact cents persist across restart; host login, closure and settl
   assert.equal((await(await request('/api/session',null,{Cookie:cookie})).json()).authenticated,true);
   assert.equal((await request('/api/v2/host',{action:'close'},{Cookie:cookie,Origin:PAGES})).status,403);
   assert.equal((await request('/api/v2/host',{action:'close'},{Cookie:cookie})).status,200);
-  assert.equal((await request('/api/v2/predictions',{name:'Late',date:'2026-11-04',amountCents:1000,currency:"USD"})).status,409);
+  assert.equal((await request('/api/v2/predictions',{name:'Late',date:'2026-11-04',amountCents:1000,currency:"USD",venmo:"test-guest"})).status,409);
   assert.equal((await request('/api/v2/host',{action:'settle',date:'2026-11-05'},{Cookie:cookie})).status,200);
   const board=await(await request('/api/v2/predictions')).json();assert.equal(board.winningDate,'2026-11-04');assert.equal(board.payoutsCents[board.bets.find(b=>b.name==='Sam').id],7565);
   assert.equal((await request('/api/v2/host',{action:'settle',date:'2026-11-06'},{Cookie:cookie})).status,409);
@@ -44,7 +44,7 @@ test('closing betting needs no actual date and preserves future predictions with
  const request=(path,data,headers={})=>fetch(origin+path,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...headers},body:JSON.stringify(data)});
  try{
   for(const [name,date,amountCents] of [['First guest','2035-11-20',2500],['Second guest','2035-11-22',100]]){
-   assert.equal((await request('/api/v2/predictions',{name,date,amountCents,currency:'USD'})).status,200);
+   assert.equal((await request('/api/v2/predictions',{name,date,amountCents,currency:'USD',venmo:'test-guest'})).status,200);
   }
   const before=app.board();
   const login=await request('/api/session',{password:'test-only'});
@@ -55,7 +55,7 @@ test('closing betting needs no actual date and preserves future predictions with
   assert.deepEqual(closed.payoutsCents,{});assert.equal(closed.jackpotCents,2600);assert.deepEqual(closed.bets,before.bets);
   assert.equal((await request('/api/v2/host',{action:'settle',date:'2035-11-22'},{Cookie:cookie})).status,400);
   assert.deepEqual(app.board(),closed);
-  assert.equal((await request('/api/v2/predictions',{name:'Late guest',date:'2035-11-21',amountCents:500,currency:'USD'})).status,409);
+  assert.equal((await request('/api/v2/predictions',{name:'Late guest',date:'2035-11-21',amountCents:500,currency:'USD',venmo:'test-guest'})).status,409);
  }finally{await new Promise(resolve=>app.server.close(resolve));app.db.close();rmSync(dir,{recursive:true,force:true});}
 });
 test('tied payouts preserve every cent and too-late guesses get refund amounts',()=>{

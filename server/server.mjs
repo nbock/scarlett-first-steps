@@ -41,8 +41,8 @@ export function createApp({dbPath,password,ready=false,staticRoot=resolve(projec
     const input=await body(req);const name=typeof input.name==='string'?input.name.normalize('NFKC').trim().replace(/\s+/g,' '):'';
     if(!name||name.length>40||/[\x00-\x1f]/.test(name)||!validDate(input.date)||input.currency!=='USD'||!Number.isSafeInteger(input.amountCents)||input.amountCents<100||input.amountCents>100000)return send(400,{error:'Enter your name, a valid date, and a US-dollar wager from $1.00 to $1,000.00, with at most two decimal places.'});
     const venmo=normalizeVenmo(input.venmo);
-    if(venmo===null)return send(400,{error:'Enter a Venmo username (5–30 letters, numbers, hyphens or underscores), paste a profile link like venmo.com/u/username, or leave it blank.'});
-    try{const result=db.prepare("INSERT INTO bets (id,name,name_key,date,amount_cents,created_at,venmo_username) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM game WHERE id=1 AND status!='open')").run(randomUUID(),name,name.toLocaleLowerCase('en-US'),input.date,input.amountCents,Date.now(),venmo||null);if(!result.changes)return send(409,{error:'Betting is closed. The jackpot is locked.'});return send(200,{saved:true});}
+    if(!venmo)return send(400,{error:'Venmo is required to place a wager. Enter your @username or paste a profile link like venmo.com/u/username.'});
+    try{const result=db.prepare("INSERT INTO bets (id,name,name_key,date,amount_cents,created_at,venmo_username) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM game WHERE id=1 AND status!='open')").run(randomUUID(),name,name.toLocaleLowerCase('en-US'),input.date,input.amountCents,Date.now(),venmo);if(!result.changes)return send(409,{error:'Betting is closed. The jackpot is locked.'});return send(200,{saved:true});}
     catch(e){if(/UNIQUE/.test(e.message))return send(409,{error:'A bet already exists under that name. One bet per person; add your last initial if someone shares your name.'});throw e;}
    }
    if(path==='/api/session'){

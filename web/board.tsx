@@ -28,9 +28,10 @@ export default function Home() {
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true);setError("");setNotice("");
     try {
+      if(!name.trim())throw new Error("Enter your name to place a wager.");
       if (dollarsToCents(amount) === null) throw new Error("Enter a wager from $1.00 to $1,000.00, with at most two decimal places.");
       const username=normalizeVenmo(venmo);
-      if(username===null)throw new Error("Enter your Venmo @username or a profile link like venmo.com/u/username, or leave it blank.");
+      if(!username)throw new Error("Venmo is required. Enter your @username or paste a profile link like venmo.com/u/username.");
       const response = await apiFetch("/api/v2/predictions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name,date,amountCents:dollarsToCents(amount),currency:"USD",venmo:username})});
       const data = await response.json() as {error?:string;saved?:boolean};
       if (!response.ok) throw new Error(data.error || "Your bet wasn’t saved.");
@@ -74,8 +75,8 @@ export default function Home() {
             <div><label htmlFor="date">First-steps date</label><input id="date" name="date" type="date" required min="2026-01-01" max="2035-12-31" value={date} onChange={e => setDate(e.target.value)}/></div>
             <div><label htmlFor="amount">Wager (USD)</label><div className="amount-input"><span aria-hidden="true">$</span><input id="amount" name="amount" type="number" inputMode="decimal" min="1" max="1000" step="0.01" required value={amount} onChange={e => setAmount(e.target.value)}/></div></div>
           </div>
-          <label htmlFor="venmo">Venmo <span className="optional-label">(optional)</span></label>
-          <input id="venmo" name="venmo" type="text" placeholder="@username or Venmo profile link" autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={240} value={venmo} onChange={e=>setVenmo(e.target.value)} aria-describedby="venmo-help"/>
+          <label htmlFor="venmo">Your Venmo</label>
+          <input id="venmo" name="venmo" type="text" placeholder="@username or Venmo profile link" required autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={240} value={venmo} onChange={e=>setVenmo(e.target.value)} aria-describedby="venmo-help"/>
           <p id="venmo-help" className="fine-print">Only the host can see your Venmo, for collecting wagers and paying winners.</p>
           <button className="primary-button" type="submit">{saving ? "Placing wager…" : !board ? "Loading…" : !open ? "Betting is closed" : "Place wager"}</button>
         </fieldset>
