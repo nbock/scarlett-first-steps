@@ -1,7 +1,8 @@
 [Unit]
 Description=Scarlett temporary public tunnel and GitHub address updater
 After=network-online.target scarlett-jackpot.service
-Requires=scarlett-jackpot.service
+# Keep the tunnel URL alive during backend restarts.
+Wants=scarlett-jackpot.service
 
 [Service]
 Type=simple

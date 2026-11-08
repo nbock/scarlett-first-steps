@@ -32,9 +32,11 @@ GitHub Pages publishes `/docs` from `main`. The frontend shares components with 
 
 On the configured Ryzen, the user services `scarlett-jackpot` and `scarlett-tunnel` restart after failure and at boot. The tunnel supervisor discovers its random Cloudflare Quick Tunnel URL, checks that it responds, and updates `backend.json` on the `runtime` branch through the authenticated GitHub CLI. Quick Tunnels are temporary and have no uptime guarantee. A permanent ngrok or named Cloudflare tunnel can replace it later.
 
+For backend code updates, restart only `scarlett-jackpot`. The tunnel uses a `Wants` dependency so it stays running at the same URL when the backend restarts. Frontend-only updates need no service restart. Restart `scarlett-tunnel` only when the tunnel itself needs replacement; this changes its URL, so reopen host controls using the permanent GitHub Pages host entry above.
+
 ```sh
 systemctl --user status scarlett-jackpot scarlett-tunnel
-systemctl --user restart scarlett-jackpot scarlett-tunnel
+systemctl --user restart scarlett-jackpot
 journalctl --user -u scarlett-jackpot -u scarlett-tunnel -n 50
 ```
 
