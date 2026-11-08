@@ -45,6 +45,7 @@ input[type=date] { appearance: none; -webkit-appearance: none; display: block; }
   background: transparent; font-size: 14px;
 }
 .fine-print { color: var(--muted); font-size: 12px; line-height: 1.7; margin-top: 12px; }
+.optional-label { color: var(--muted); font-weight: 400; }
 .notice {
   display: flex; align-items: center; gap: 12px; margin-top: 16px;
   padding: 14px; border-radius: 6px; font-size: 14px; line-height: 1.6;
@@ -104,6 +105,9 @@ td.amount-column { font-weight: 600; }
 .host-page p { font-size: 14px; line-height: 1.8; margin: 20px 0; }
 .host-controls form { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 10px; }
 .host-controls input { margin-bottom: 18px; }
+.host-contacts { margin: 30px 0; }
+.host-contacts .fine-print { font-size: 12px; margin: 12px 0; }
+.venmo-contact { overflow-wrap: anywhere; }
 
 .invite-page { padding: 25px; max-width: 800px; margin: auto; }
 .invite-controls { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 25px; align-items: center; }

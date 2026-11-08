@@ -6,6 +6,7 @@ import {resolve,dirname,extname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {settleBets,validDate} from './game.ts';
 import {initializeDatabase} from './database.mjs';
+import {normalizeVenmo} from './venmo.ts';
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 export const PAGES='https://nbock.github.io';
 export const SITE=PAGES+'/scarlett-first-steps/';
@@ -39,7 +40,9 @@ export function createApp({dbPath,password,ready=false,staticRoot=resolve(projec
     if(!sameOrigin&&from!==PAGES)return send(403,{error:'Please place bets from the birthday website.'});
     const input=await body(req);const name=typeof input.name==='string'?input.name.normalize('NFKC').trim().replace(/\s+/g,' '):'';
     if(!name||name.length>40||/[\x00-\x1f]/.test(name)||!validDate(input.date)||input.currency!=='USD'||!Number.isSafeInteger(input.amountCents)||input.amountCents<100||input.amountCents>100000)return send(400,{error:'Enter your name, a valid date, and a US-dollar wager from $1.00 to $1,000.00, with at most two decimal places.'});
-    try{const result=db.prepare("INSERT INTO bets SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM game WHERE id=1 AND status!='open')").run(randomUUID(),name,name.toLocaleLowerCase('en-US'),input.date,input.amountCents,Date.now());if(!result.changes)return send(409,{error:'Betting is closed. The jackpot is locked.'});return send(200,{saved:true});}
+    const venmo=normalizeVenmo(input.venmo);
+    if(venmo===null)return send(400,{error:'Enter a Venmo username (5–30 letters, numbers, hyphens or underscores), paste a profile link like venmo.com/u/username, or leave it blank.'});
+    try{const result=db.prepare("INSERT INTO bets (id,name,name_key,date,amount_cents,created_at,venmo_username) SELECT ?,?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM game WHERE id=1 AND status!='open')").run(randomUUID(),name,name.toLocaleLowerCase('en-US'),input.date,input.amountCents,Date.now(),venmo||null);if(!result.changes)return send(409,{error:'Betting is closed. The jackpot is locked.'});return send(200,{saved:true});}
     catch(e){if(/UNIQUE/.test(e.message))return send(409,{error:'A bet already exists under that name. One bet per person; add your last initial if someone shares your name.'});throw e;}
    }
    if(path==='/api/session'){
@@ -54,9 +57,14 @@ export function createApp({dbPath,password,ready=false,staticRoot=resolve(projec
     return send(200,{authenticated:true},{'Set-Cookie':`scarlett_host=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200${proto==='https'?'; Secure':''}`});
    }
    if(path==='/api/v2/host'){
-    if(!session(req)||!sameOrigin)return send(403,{error:'Sign in as the host before changing the jackpot.'});
-    if(req.method!=='POST')return send(405,{error:'Method not allowed.'});
+    if(!session(req)||(from&&!sameOrigin))return send(403,{error:'Sign in as the host to access host controls.'});
     if(!isReady())return send(503,{error:'Setup is not complete yet.'});
+    if(req.method==='GET'){
+     const venmoByBet=Object.fromEntries(db.prepare('SELECT id,venmo_username FROM bets').all().map(bet=>[bet.id,bet.venmo_username]));
+     return send(200,{...board(),venmoByBet});
+    }
+    if(req.method!=='POST')return send(405,{error:'Method not allowed.'});
+    if(!sameOrigin)return send(403,{error:'Sign in from this host page.'});
     const input=await body(req);const status=input.action==='close'?'closed':input.action==='settle'?'settled':null;
     if(!status||(status==='settled'&&(!validDate(input.date)||input.date>new Date().toISOString().slice(0,10))))return send(400,{error:'Enter the actual first-steps date, today or earlier.'});
     const result=db.prepare("INSERT INTO game VALUES(1,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,actual_date=excluded.actual_date,updated_at=excluded.updated_at WHERE game.status!='settled'").run(status,status==='settled'?input.date:null,Date.now());

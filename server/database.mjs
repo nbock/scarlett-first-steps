@@ -11,6 +11,9 @@ export function initializeDatabase(db) {
    CREATE TABLE IF NOT EXISTS game(id INTEGER PRIMARY KEY CHECK(id=1),status TEXT NOT NULL,actual_date TEXT,updated_at INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,expires_at INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);`);
+  if(!db.prepare('PRAGMA table_info(bets)').all().some(column=>column.name==='venmo_username')) {
+   db.exec('ALTER TABLE bets ADD COLUMN venmo_username TEXT');
+  }
   db.prepare("INSERT OR REPLACE INTO metadata VALUES('currency','USD')").run();
   db.exec('COMMIT');
  }catch(error){db.exec('ROLLBACK');throw error;}

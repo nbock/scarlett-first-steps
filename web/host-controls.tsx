@@ -1,17 +1,18 @@
 "use client";
 import {apiFetch} from "./api";
 import {useEffect,useState} from "react";
-import {formatDate,formatMoney,type Board} from "../server/game";
+import {formatDate,formatMoney,type HostBoard} from "../server/game";
+import {venmoProfileUrl} from "../server/venmo";
 
 export default function HostControls() {
-  const [board,setBoard]=useState<Board|null>(null);
+  const [board,setBoard]=useState<HostBoard|null>(null);
   const [date,setDate]=useState("");
   const [message,setMessage]=useState("");
   const [busy,setBusy]=useState(false);
 
   async function load(){
-    const res=await apiFetch("/api/v2/predictions");
-    const body=await res.json() as Board & {error?:string};
+    const res=await apiFetch("/api/v2/host");
+    const body=await res.json() as HostBoard & {error?:string};
     if(!res.ok)throw new Error(body.error);
     setBoard(body);
   }
@@ -54,5 +55,23 @@ export default function HostControls() {
     </form>}
     {board?.status==="settled"&&<p>First steps: {formatDate(board.actualDate!)}. The result is final.</p>}
     <p role="status">{message}</p>
+    {board&&<section className="host-contacts" aria-labelledby="venmo-contacts-title">
+      <h2 id="venmo-contacts-title">Wagers & Venmo</h2>
+      <p className="fine-print">Venmo details are visible only to you. Open a profile to pay or request money in Venmo.</p>
+      <div className="wagers-table-wrap" role="region" aria-label="Private wager contact details" tabIndex={0}>
+        <table>
+          <thead><tr><th scope="col">Name</th><th scope="col" className="amount-column">Wager</th><th scope="col">Venmo</th>{board.status==="settled"&&<th scope="col" className="amount-column">{board.refunded?"Refund due":"Payout due"}</th>}</tr></thead>
+          <tbody>{board.bets.map(bet=>{
+            const username=board.venmoByBet[bet.id];
+            return <tr key={bet.id}>
+              <td>{bet.name}</td><td className="amount-column">{formatMoney(bet.amount_cents)}</td>
+              <td className="venmo-contact">{username?<a href={venmoProfileUrl(username)} target="_blank" rel="noopener noreferrer">@{username} ↗</a>:<span className="optional-label">Not provided</span>}</td>
+              {board.status==="settled"&&<td className="amount-column">{formatMoney(board.payoutsCents[bet.id]||0)}</td>}
+            </tr>;
+          })}</tbody>
+        </table>
+        {!board.bets.length&&<p className="empty-board">No wagers yet.</p>}
+      </div>
+    </section>}
   </div>;
 }

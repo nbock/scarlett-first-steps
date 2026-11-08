@@ -1,6 +1,7 @@
 export type Bet = { id: string; name: string; date: string; amount_cents: number; created_at: number };
 export type GameStatus = "open" | "closed" | "settled";
 export type Board = { currency: "USD"; bets: Bet[]; jackpotCents: number; status: GameStatus; actualDate: string | null; winningDate: string | null; payoutsCents: Record<string,number>; refunded: boolean };
+export type HostBoard = Board & {venmoByBet: Record<string,string | null>};
 
 export function dollarsToCents(value: string): number | null {
   if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
