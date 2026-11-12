@@ -1,14 +1,8 @@
 export type Bet = { id: string; name: string; date: string; amount_cents: number; created_at: number };
 export type GameStatus = "open" | "closed" | "settled";
-export type Board = { currency: "USD"; bets: Bet[]; jackpotCents: number; status: GameStatus; actualDate: string | null; winningDate: string | null; payoutsCents: Record<string,number>; refunded: boolean };
+export const ENTRY_FEE_CENTS = 500;
+export type Board = { currency: "USD"; entryFeeCents: number; hostVenmo: string | null; bets: Bet[]; jackpotCents: number; status: GameStatus; actualDate: string | null; winningDate: string | null; payoutsCents: Record<string,number>; refunded: boolean };
 export type HostBoard = Board & {venmoByBet: Record<string,string | null>};
-
-export function dollarsToCents(value: string): number | null {
-  if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
-  const [dollars, cents = ""] = value.split(".");
-  const amount = Number(dollars) * 100 + Number(cents.padEnd(2, "0"));
-  return Number.isSafeInteger(amount) && amount >= 100 && amount <= 100000 ? amount : null;
-}
 
 export const formatMoney = (cents: number) => new Intl.NumberFormat("en-US", {style:"currency",currency:"USD"}).format(cents / 100);
 
@@ -26,11 +20,9 @@ export function settleBets(bets: Bet[], actualDate: string | null) {
   const winningDate = eligible.reduce((latest,bet) => bet.date > latest ? bet.date : latest, "");
   const winners = eligible.filter(bet => bet.date === winningDate).sort((a,b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
   const jackpot = bets.reduce((sum,bet) => sum + BigInt(bet.amount_cents),0n);
-  const totalStake = winners.reduce((sum,bet) => sum + BigInt(bet.amount_cents),0n);
-  const shares = winners.map(bet => {const weighted = jackpot * BigInt(bet.amount_cents);return {bet,whole:Number(weighted / totalStake),remainder:weighted % totalStake};});
-  let leftover = Number(jackpot) - shares.reduce((sum,s) => sum + s.whole,0);
-  shares.sort((a,b) => a.remainder === b.remainder ? a.bet.created_at - b.bet.created_at || a.bet.id.localeCompare(b.bet.id) : a.remainder > b.remainder ? -1 : 1);
-  for (const share of shares) payoutsCents[share.bet.id] = share.whole + (leftover-- > 0 ? 1 : 0);
+  const share = Number(jackpot / BigInt(winners.length));
+  const leftover = Number(jackpot % BigInt(winners.length));
+  winners.forEach((bet,index) => {payoutsCents[bet.id] = share + (index < leftover ? 1 : 0);});
   return {winningDate, payoutsCents, refunded: false};
 }
 

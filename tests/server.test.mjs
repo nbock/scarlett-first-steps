@@ -3,78 +3,104 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
 import {createApp,PAGES} from '../server/server.mjs';
-import {settleBets,dollarsToCents,formatMoney} from '../server/game.ts';
+import {ENTRY_FEE_CENTS,settleBets,formatMoney} from '../server/game.ts';
 import {DatabaseSync} from 'node:sqlite';
-test('USD API: exact cents persist across restart; host login, closure and settlement',async()=>{
- const dir=mkdtempSync(join(tmpdir(),'scarlett-test-'));const dbPath=join(dir,'test.sqlite');const app=createApp({dbPath,password:'test-only-long-password',ready:true});
+const entry=(overrides={})=>({name:'Sam',date:'2026-11-04',amountCents:ENTRY_FEE_CENTS,currency:'USD',venmo:'sam-test',requestId:randomUUID(),...overrides});
+
+test('$5 entries: repeat names allowed, retries do not duplicate, host closure and equal payout persist',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'scarlett-fixed-'));const dbPath=join(dir,'test.sqlite');
+ const app=createApp({dbPath,password:'test-only-long-password',ready:true});
  await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+app.server.address().port;
  const request=(path,data,headers={})=>fetch(origin+path,{method:data?'POST':'GET',headers:{Origin:origin,'Content-Type':'application/json',...headers},body:data?JSON.stringify(data):undefined});
+ const firstEntry=entry();
  try{
   assert.equal((await request('/host')).status,200);
-  assert.equal((await request('/api/predictions',{name:'Old UI',date:'2026-11-04',amount:25})).status,409);
-  for(const invalid of [{amountCents:123.4,currency:'USD',venmo:'test-guest'},{amountCents:100001,currency:'USD',venmo:'test-guest'},{amountCents:2500,currency:'EUR'},{amount:25}]){
-   assert.equal((await request('/api/v2/predictions',{name:'Invalid',date:'2026-11-04',...invalid})).status,400);
+  for(const path of ['/api/predictions','/api/v2/predictions'])assert.equal((await request(path,firstEntry)).status,409);
+  for(const amountCents of [0,100,499,501,1000,2500,100000,500.1,'500',null]){
+   assert.equal((await request('/api/v3/predictions',entry({amountCents}))).status,400);
   }
-  const first=await request('/api/v2/predictions',{name:'Sam',date:'2026-11-04',amountCents:2510,currency:"USD",venmo:"test-guest"},{Origin:PAGES});assert.equal(first.status,200);assert.equal(first.headers.get('access-control-allow-origin'),PAGES);
-  assert.equal((await request('/api/v2/predictions',{name:' sam ',date:'2026-11-04',amountCents:2510,currency:"USD",venmo:"test-guest"})).status,409);
-  assert.equal((await request('/api/v2/predictions',{name:'Bad',date:'2026-02-30',amountCents:2510,currency:"USD",venmo:"test-guest"})).status,400);
-  assert.equal((await request('/api/v2/predictions',{name:'Bad',date:'2026-11-04',amountCents:-1,currency:"USD",venmo:"test-guest"})).status,400);
-  assert.equal((await request('/api/v2/predictions',{name:'Bad',date:'2026-11-04',amountCents:1000,currency:"USD",venmo:"test-guest"},{Origin:'https://unrelated.example'})).status,403);
-  await request('/api/v2/predictions',{name:'Alex',date:'2026-11-07',amountCents:5055,currency:"USD",venmo:"test-guest"});
-  assert.equal((await(await request('/api/v2/predictions')).json()).jackpotCents,7565);
-  assert.equal((await request('/api/v2/host',{action:'close'},{'oai-authenticated-user-email':'bocknolan@gmail.com','oai-authenticated-user-id':'forged'})).status,403);
+  for(const invalid of [{currency:'EUR'},{requestId:undefined},{requestId:'invalid'},{date:'2026-02-30'},{name:'   '},{venmo:''}]){
+   assert.equal((await request('/api/v3/predictions',entry(invalid))).status,400);
+  }
+  assert.equal(app.board().bets.length,0);
+  assert.equal((await request('/api/v3/predictions',firstEntry,{Origin:'https://unrelated.example'})).status,403);
+  const first=await request('/api/v3/predictions',firstEntry,{Origin:PAGES});assert.equal(first.status,200);assert.equal(first.headers.get('access-control-allow-origin'),PAGES);
+  const firstSaved=await first.json();
+  const retries=await Promise.all([request('/api/v3/predictions',firstEntry),request('/api/v3/predictions',firstEntry)]);
+  for(const retry of retries){assert.equal(retry.status,200);assert.deepEqual(await retry.json(),firstSaved);}
+  assert.equal(app.board().bets.length,1);assert.equal(app.board().jackpotCents,500);
+  assert.equal((await request('/api/v3/predictions',{...firstEntry,date:'2026-11-05'})).status,409);
+  assert.equal((await request('/api/v3/predictions',entry({name:' sam '}))).status,200);
+  assert.equal((await request('/api/v3/predictions',entry({name:'Alex',date:'2026-11-07',venmo:'alex-test'}))).status,200);
+  assert.equal(app.board().bets.length,3);assert.equal(app.board().jackpotCents,1500);assert.equal(app.board().entryFeeCents,500);
+  assert.equal((await(await request('/api/v2/predictions')).json()).jackpotCents,1500);
+  assert.equal((await request('/api/v2/host',{action:'close'},{'oai-authenticated-user-email':'forged@example.com'})).status,403);
+  assert.equal((await request('/api/v2/host',{action:'set-venmo',venmo:'evil-guest'})).status,403);
   assert.equal((await request('/api/session',{password:'wrong'})).status,401);
   const login=await request('/api/session',{password:'test-only-long-password'});assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];
-  assert.equal((await(await request('/api/session',null,{Cookie:cookie})).json()).authenticated,true);
+  assert.equal((await request('/api/v2/host',{action:'set-venmo',venmo:'https://evil.example/host'},{Cookie:cookie})).status,400);
+  assert.equal((await request('/api/v2/host',{action:'set-venmo',venmo:'@host-test'},{Cookie:cookie,Origin:PAGES})).status,403);
+  assert.equal((await request('/api/v2/host',{action:'set-venmo',venmo:'https://venmo.com/u/host-test'},{Cookie:cookie})).status,200);
+  assert.equal((await(await request('/api/v3/predictions')).json()).hostVenmo,'host-test');
   assert.equal((await request('/api/v2/host',{action:'close'},{Cookie:cookie,Origin:PAGES})).status,403);
   assert.equal((await request('/api/v2/host',{action:'close'},{Cookie:cookie})).status,200);
-  assert.equal((await request('/api/v2/predictions',{name:'Late',date:'2026-11-04',amountCents:1000,currency:"USD",venmo:"test-guest"})).status,409);
+  assert.equal((await request('/api/v3/predictions',entry({name:'Late'}))).status,409);
+  assert.deepEqual(await(await request('/api/v3/predictions',firstEntry)).json(),firstSaved);
+  assert.equal(app.board().jackpotCents,1500);
   assert.equal((await request('/api/v2/host',{action:'settle',date:'2026-11-05'},{Cookie:cookie})).status,200);
-  const board=await(await request('/api/v2/predictions')).json();assert.equal(board.winningDate,'2026-11-04');assert.equal(board.payoutsCents[board.bets.find(b=>b.name==='Sam').id],7565);
+  const board=app.board();assert.equal(board.winningDate,'2026-11-04');
+  for(const bet of board.bets.filter(b=>b.date==='2026-11-04'))assert.equal(board.payoutsCents[bet.id],750);
+  assert.equal(Object.values(board.payoutsCents).reduce((a,b)=>a+b,0),1500);
   assert.equal((await request('/api/v2/host',{action:'settle',date:'2026-11-06'},{Cookie:cookie})).status,409);
  }finally{await new Promise(resolve=>app.server.close(resolve));app.db.close();}
- const reopened=createApp({dbPath,password:'test-only-long-password'});assert.equal(reopened.board().jackpotCents,7565);assert.equal(reopened.board().status,'settled');reopened.db.close();rmSync(dir,{recursive:true,force:true});
+ try{
+  const reopened=createApp({dbPath,password:'test-only-long-password'});
+  try{
+   assert.equal(reopened.board().jackpotCents,1500);assert.equal(reopened.board().status,'settled');assert.equal(reopened.board().hostVenmo,'host-test');
+   assert.equal(reopened.db.prepare('SELECT COUNT(*) AS n FROM bets WHERE request_id=?').get(firstEntry.requestId).n,1);
+  }finally{reopened.db.close();}
+ }finally{rmSync(dir,{recursive:true,force:true});}
 });
-test('closing betting needs no actual date and preserves future predictions without awarding payouts',async()=>{
- const dir=mkdtempSync(join(tmpdir(),'scarlett-close-'));const dbPath=join(dir,'test.sqlite');
- const app=createApp({dbPath,password:'test-only',ready:true});
- await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
- const origin='http://127.0.0.1:'+app.server.address().port;
+
+test('closing betting needs no actual date and preserves future entries without awarding payouts',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'scarlett-close-'));const app=createApp({dbPath:join(dir,'test.sqlite'),password:'test-only',ready:true});
+ await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));const origin='http://127.0.0.1:'+app.server.address().port;
  const request=(path,data,headers={})=>fetch(origin+path,{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...headers},body:JSON.stringify(data)});
  try{
-  for(const [name,date,amountCents] of [['First guest','2035-11-20',2500],['Second guest','2035-11-22',100]]){
-   assert.equal((await request('/api/v2/predictions',{name,date,amountCents,currency:'USD',venmo:'test-guest'})).status,200);
-  }
+  for(const date of ['2035-11-20','2035-11-22'])assert.equal((await request('/api/v3/predictions',entry({date}))).status,200);
   const before=app.board();
-  const login=await request('/api/session',{password:'test-only'});
-  const cookie=login.headers.get('set-cookie').split(';')[0];
+  const login=await request('/api/session',{password:'test-only'});const cookie=login.headers.get('set-cookie').split(';')[0];
   assert.equal((await request('/api/v2/host',{action:'close'},{Cookie:cookie})).status,200);
-  const closed=app.board();
-  assert.equal(closed.status,'closed');assert.equal(closed.actualDate,null);assert.equal(closed.winningDate,null);
-  assert.deepEqual(closed.payoutsCents,{});assert.equal(closed.jackpotCents,2600);assert.deepEqual(closed.bets,before.bets);
+  const closed=app.board();assert.equal(closed.status,'closed');assert.equal(closed.actualDate,null);assert.equal(closed.winningDate,null);
+  assert.deepEqual(closed.payoutsCents,{});assert.equal(closed.jackpotCents,1000);assert.deepEqual(closed.bets,before.bets);
   assert.equal((await request('/api/v2/host',{action:'settle',date:'2035-11-22'},{Cookie:cookie})).status,400);
   assert.deepEqual(app.board(),closed);
-  assert.equal((await request('/api/v2/predictions',{name:'Late guest',date:'2035-11-21',amountCents:500,currency:'USD',venmo:'test-guest'})).status,409);
+  assert.equal((await request('/api/v3/predictions',entry({date:'2035-11-21'}))).status,409);
  }finally{await new Promise(resolve=>app.server.close(resolve));app.db.close();rmSync(dir,{recursive:true,force:true});}
 });
-test('tied payouts preserve every cent and too-late guesses get refund amounts',()=>{
- const bets=[{id:'a',name:'a',date:'2026-11-04',amount_cents:1000,created_at:1},{id:'b',name:'b',date:'2026-11-04',amount_cents:3000,created_at:2},{id:'c',name:'c',date:'2026-11-07',amount_cents:1001,created_at:3}];
- const result=settleBets(bets,'2026-11-05');
- assert.deepEqual(result.payoutsCents,{b:3751,a:1250});
- assert.equal(Object.values(result.payoutsCents).reduce((a,b)=>a+b,0),5001);
- assert.deepEqual(settleBets(bets,'2026-11-01').payoutsCents,{a:1000,b:3000,c:1001});
- assert.equal(settleBets(bets,'2026-11-01').refunded,true);
+
+test('equal winning-entry shares preserve every cent; exact dates win and late guesses are refunded',()=>{
+ const bets=[['a','Sam','2026-11-04'],['b','Sam','2026-11-04'],['c','Alex','2026-11-04'],['d','Pat','2026-11-07']].map(([id,name,date],i)=>({id,name,date,amount_cents:500,created_at:i}));
+ const result=settleBets(bets,'2026-11-05');assert.equal(result.winningDate,'2026-11-04');
+ assert.deepEqual(result.payoutsCents,{a:667,b:667,c:666});
+ assert.equal(Object.values(result.payoutsCents).reduce((a,b)=>a+b,0),2000);
+ assert.deepEqual(settleBets(bets,'2026-11-07').payoutsCents,{d:2000});
+ const refund=settleBets(bets,'2026-11-01');assert.equal(refund.refunded,true);assert.deepEqual(refund.payoutsCents,{a:500,b:500,c:500,d:500});
+ assert.deepEqual(settleBets(bets,null),{winningDate:null,payoutsCents:{},refunded:false});
+ assert.equal(formatMoney(ENTRY_FEE_CENTS),'$5.00');
 });
-test('dollar input converts to exact cents and rejects fractional cents',()=>{
- for(const [input,expected] of [['1',100],['1.1',110],['10.29',1029],['1000.00',100000]])assert.equal(dollarsToCents(input),expected);
- for(const input of ['', '-1','0.99','1000.01','1.001','1e2','Infinity',' 25'])assert.equal(dollarsToCents(input),null);
- assert.equal(formatMoney(2510),'$25.10');assert.equal(formatMoney(0),'$0.00');
-});
-test('migration archives chip guesses without turning them into cash bets',()=>{
+
+test('migration archives chip guesses without turning them into cash entries',()=>{
  const dir=mkdtempSync(join(tmpdir(),'scarlett-migration-'));const dbPath=join(dir,'old.sqlite');
  const old=new DatabaseSync(dbPath);old.exec("CREATE TABLE bets(id TEXT PRIMARY KEY,name TEXT,name_key TEXT UNIQUE,date TEXT,amount INTEGER,created_at INTEGER);CREATE TABLE game(id INTEGER PRIMARY KEY,status TEXT,actual_date TEXT,updated_at INTEGER);");
  old.prepare('INSERT INTO bets VALUES(?,?,?,?,?,?)').run('old','Chip Guest','chip guest','2026-11-04',25,1);old.prepare('INSERT INTO game VALUES(1,?,?,?)').run('settled','2026-11-04',1);old.close();
- const app=createApp({dbPath,password:'test-only',ready:true});assert.equal(app.board().currency,'USD');assert.equal(app.board().jackpotCents,0);assert.equal(app.board().status,'open');assert.equal(app.db.prepare('SELECT amount FROM legacy_chip_bets').get().amount,25);app.db.close();
- const second=createApp({dbPath,password:'test-only'});assert.equal(second.board().bets.length,0);assert.equal(second.db.prepare('SELECT COUNT(*) AS n FROM legacy_chip_bets').get().n,1);second.db.close();rmSync(dir,{recursive:true,force:true});
+ try{
+  for(let n=0;n<2;n++){
+   const app=createApp({dbPath,password:'test-only',ready:true});
+   try{assert.equal(app.board().currency,'USD');assert.equal(app.board().jackpotCents,0);assert.equal(app.board().status,'open');assert.equal(app.db.prepare('SELECT amount FROM legacy_chip_bets').get().amount,25);}
+   finally{app.db.close();}
+  }
+ }finally{rmSync(dir,{recursive:true,force:true});}
 });

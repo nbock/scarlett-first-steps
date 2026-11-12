@@ -14,7 +14,9 @@ Bets, sessions, the host password, and service configuration are stored outside 
 
 ## Game rules
 
-Each person supplies a name, predicted date, and wager from $1.00–$1,000.00 USD. The latest predicted date on or before the actual date wins. Ties split the pot proportionally to wagers, using exact integer cents and largest-remainder cent rounding. If all guesses are too late, the host returns all wagers. The host closes betting and records the actual date; a settled result is final.
+Each entry costs exactly $5.00 USD and requires a name, Venmo username, and predicted date. People can submit multiple entries, including multiple entries for the same date. Each submission is one $5 share. The latest predicted date on or before the actual date wins the entire pot. Tied winning entries split it equally; any leftover cents go to the earlier winning entries. If all guesses are too late, the host returns all entry fees. The host closes betting and records the actual date; a settled result is final.
+
+Set the host’s Venmo in host controls to display a payment link for guests. Guest Venmo handles are visible only in host controls. The site records entries but does not confirm or process Venmo payments. The host collects $5 for each entry and pays the winners.
 
 ## Development and hosting
 
@@ -42,4 +44,4 @@ journalctl --user -u scarlett-jackpot -u scarlett-tunnel -n 50
 
 Local configuration: `~/.config/scarlett-jackpot/config.json` (mode 600). Host password: `~/.config/scarlett-jackpot/host-password.txt` (mode 600). Database: `~/.local/share/scarlett-jackpot/bets.sqlite`. Back up the database with SQLite-aware backup tooling; do not commit it.
 
-Dollar wagers use the versioned `/api/v2` betting endpoints and explicit USD amounts in cents. Old cached chip forms cannot place cash wagers. The migration archives earlier chip records as `legacy_chip_bets` and `legacy_chip_game`; it never turns them into dollar obligations.
+New $5 entries use `/api/v3/predictions`, enforce exactly 500 cents server-side, and carry a unique request ID so retrying one submission cannot create a second entry. A fresh submission gets a fresh ID. Older prediction endpoints reject writes with a refresh message. Host controls still use `/api/v2/host`. The database migration removes the old unique-name constraint while preserving saved records; earlier chip records remain archived in `legacy_chip_bets` and `legacy_chip_game`.

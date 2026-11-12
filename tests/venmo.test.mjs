@@ -4,6 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
+import {randomUUID} from 'node:crypto';
 import {createApp,PAGES} from '../server/server.mjs';
 import {normalizeVenmo,venmoProfileUrl} from '../server/venmo.ts';
 
@@ -20,23 +21,23 @@ test('Venmo persists with wagers but is available only through the authenticated
  const app=createApp({dbPath,password:'test-only',ready:true});
  await new Promise(resolve=>app.server.listen(0,'127.0.0.1',resolve));
  const origin='http://127.0.0.1:'+app.server.address().port;
- const request=(path,data,headers={})=>fetch(origin+path,{method:data?'POST':'GET',headers:{Origin:origin,'Content-Type':'application/json',...headers},body:data?JSON.stringify(data):undefined});
+ const request=(path,data,headers={})=>fetch(origin+path,{method:data?'POST':'GET',headers:{Origin:origin,'Content-Type':'application/json',...headers},body:data?JSON.stringify(path==='/api/v3/predictions'?{requestId:randomUUID(),...data}:data):undefined});
  let guestId;
  try{
-  const wager={name:'Guest',date:'2026-11-20',amountCents:2500,currency:'USD',venmo:'https://venmo.com/u/Auntie-Sam?share=true'};
-  assert.equal((await request('/api/v2/predictions',wager,{Origin:PAGES})).status,200);
+  const wager={name:'Guest',date:'2026-11-20',amountCents:500,currency:'USD',venmo:'https://venmo.com/u/Auntie-Sam?share=true'};
+  assert.equal((await request('/api/v3/predictions',wager,{Origin:PAGES})).status,200);
   for(const venmo of [undefined,null,'','   ','\t\n']){
-   const rejected=await request('/api/v2/predictions',{...wager,name:'Missing Venmo',venmo});
+   const rejected=await request('/api/v3/predictions',{...wager,name:'Missing Venmo',venmo});
    assert.equal(rejected.status,400);assert.match((await rejected.json()).error,/Venmo is required/);
   }
   for(const name of [undefined,null,'','   ']){
-   assert.equal((await request('/api/v2/predictions',{...wager,name})).status,400);
+   assert.equal((await request('/api/v3/predictions',{...wager,name})).status,400);
   }
-  assert.equal(app.board().bets.length,1);assert.equal(app.board().jackpotCents,2500);
-  assert.equal((await request('/api/v2/predictions',{...wager,name:'Second Guest',venmo:'@Second-Guest'})).status,200);
-  assert.equal((await request('/api/v2/predictions',{...wager,name:'Invalid',venmo:'https://evil.example/u/Guest'})).status,400);
-  const publicBoard=await(await request('/api/v2/predictions')).json();
-  assert.equal(publicBoard.jackpotCents,5000);assert.equal(publicBoard.bets.length,2);
+  assert.equal(app.board().bets.length,1);assert.equal(app.board().jackpotCents,500);
+  assert.equal((await request('/api/v3/predictions',{...wager,name:'Second Guest',venmo:'@Second-Guest'})).status,200);
+  assert.equal((await request('/api/v3/predictions',{...wager,name:'Invalid',venmo:'https://evil.example/u/Guest'})).status,400);
+  const publicBoard=await(await request('/api/v3/predictions')).json();
+  assert.equal(publicBoard.jackpotCents,1000);assert.equal(publicBoard.bets.length,2);
   assert.equal(JSON.stringify(publicBoard).includes('Auntie-Sam'),false);
   assert.equal(Object.hasOwn(publicBoard,'venmoByBet'),false);
   for(const bet of publicBoard.bets)assert.equal(Object.hasOwn(bet,'venmo_username'),false);
@@ -51,7 +52,7 @@ test('Venmo persists with wagers but is available only through the authenticated
   assert.equal(host.venmoByBet[host.bets.find(b=>b.name==='Second Guest').id],'Second-Guest');
   assert.equal((await request('/api/v2/host',null,{Cookie:cookie,Origin:PAGES})).status,403);
   assert.equal((await request('/api/v2/host',null,{Cookie:cookie,Origin:'https://evil.example'})).status,403);
-  const publicWithCookie=await(await request('/api/v2/predictions',null,{Cookie:cookie})).json();
+  const publicWithCookie=await(await request('/api/v3/predictions',null,{Cookie:cookie})).json();
   assert.deepEqual(publicWithCookie,publicBoard);
   assert.equal((await fetch(origin+'/api/v2/host',{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({action:'close'})})).status,403);
   assert.equal(app.board().status,'open');
@@ -59,7 +60,7 @@ test('Venmo persists with wagers but is available only through the authenticated
  try{
   const reopened=createApp({dbPath,password:'test-only'});
   try{
-   assert.equal(reopened.board().jackpotCents,5000);
+   assert.equal(reopened.board().jackpotCents,1000);
    assert.equal(reopened.db.prepare('SELECT venmo_username FROM bets WHERE id=?').get(guestId).venmo_username,'Auntie-Sam');
   }finally{reopened.db.close();}
  }finally{rmSync(dir,{recursive:true,force:true});}
@@ -76,8 +77,10 @@ test('Venmo migration retains existing dollar wagers and closed betting across r
    const app=createApp({dbPath,password:'test-only',ready:true});
    try{
     assert.equal(app.board().status,'closed');assert.equal(app.board().jackpotCents,2500);
-    assert.deepEqual({...app.db.prepare('SELECT * FROM bets').get()},{id:'existing',name:'Existing Guest',name_key:'existing guest',date:'2026-11-20',amount_cents:2500,created_at:123,venmo_username:null});
+    assert.deepEqual({...app.db.prepare('SELECT * FROM bets').get()},{id:'existing',name:'Existing Guest',name_key:'existing guest',date:'2026-11-20',amount_cents:2500,created_at:123,venmo_username:null,request_id:null});
     assert.equal(app.db.prepare('SELECT updated_at FROM game').get().updated_at,456);
+    const indexes=app.db.prepare('PRAGMA index_list(bets)').all().filter(index=>index.unique);
+    for(const index of indexes)assert.equal(app.db.prepare('SELECT name FROM pragma_index_info(?)').all(index.name).some(column=>column.name==='name_key'),false);
    }finally{app.db.close();}
   }
  }finally{rmSync(dir,{recursive:true,force:true});}

@@ -72,12 +72,14 @@ input[type=date] { appearance: none; -webkit-appearance: none; display: block; }
 .bet-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
 .bet-status.closed::before { background: var(--coral); }
 .wager-section, .wagers-section { margin-top: 32px; }
-.wager-fields { display: grid; grid-template-columns: 1fr 1.1fr .75fr; gap: 12px; }
-.wager-fields > div { min-width: 0; }
-.wager-fields label { margin-top: 16px; }
-.amount-input { position: relative; }
-.amount-input > span { position: absolute; left: 12px; top: 14px; color: var(--muted); }
-.amount-input input { padding-left: 28px; }
+.entry-rules { margin: 16px 0 0; text-align: center; font-size: 14px; line-height: 1.7; }
+.entry-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.entry-fields > div { min-width: 0; }
+.entry-fields label { margin-top: 12px; }
+.entry-payment { padding: 18px 0; margin: 20px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.entry-payment h3, .entry-details-title { font-size: 14px; font-weight: 600; }
+.entry-payment p { font-size: 13px; line-height: 1.7; margin-top: 8px; color: var(--muted); }
+.venmo-pay { display: inline-flex; margin-top: 12px; text-decoration: none; font-size: 13px; background: white; }
 .wager-section .primary-button { margin-top: 14px; }
 .wagers-section h2 { margin-bottom: 14px; }
 .wagers-table-wrap { overflow-x: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
@@ -104,6 +106,8 @@ td.amount-column { font-weight: 600; }
 .host-page h1 { font-size: 45px; margin-bottom: 20px; }
 .host-page p { font-size: 14px; line-height: 1.8; margin: 20px 0; }
 .host-controls form { border-top: 1px solid var(--line); margin-top: 30px; padding-top: 10px; }
+.host-controls > section { margin-top: 30px; }
+.entry-date { display: block; color: var(--muted); font-size: 12px; margin-top: 5px; white-space: nowrap; }
 .host-controls input { margin-bottom: 18px; }
 .host-contacts { margin: 30px 0; }
 .host-contacts .fine-print { font-size: 12px; margin: 12px 0; }
@@ -124,8 +128,7 @@ td.amount-column { font-weight: 600; }
   .jackpot-page { padding: 28px 20px 16px; }
   .page-heading h1 { font-size: 28px; }
   .page-heading p { font-size: 13px; }
-  .wager-fields { grid-template-columns: 1.2fr 1fr; gap: 0 12px; }
-  .wager-fields > div:first-child { grid-column: 1 / -1; }
+  .entry-fields { grid-template-columns: 1fr; gap: 0; }
   th, td { padding: 14px 6px; }
   table { font-size: 13px; }
   .print-sign h1 { font-size: 40px; }
